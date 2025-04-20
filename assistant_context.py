@@ -1,5 +1,4 @@
 import requests
-import subprocess
 import re
 
 IGNORE_INPUT_TAG = "[IGNORING]"
@@ -33,6 +32,16 @@ IMPORTANT: DO NOT write commands unless explicitly to do so.
 IMPORTANT: If issuing commands, and explanation is imporant, write the explanation above each command.
 """
 
+class TAssistantFeature:
+
+    def __init__(self):
+        pass
+
+    def update(self):
+        pass
+
+    def make_current_context_system_prompt(self) -> str:
+        return ""
 
 class TCommand:
 
@@ -51,22 +60,25 @@ class TAssistant:
     def __init__(
             self,
             ollama_model_name: str = "gemma3:12b",
-            init_commands: list[TCommand] = []
+            init_commands: list[TCommand] = [],
+            init_system_prompt_features = []
     ):
         self.system_prompt = ""
         self.previous_messages = []
         self.buffered_input = ""
         self.model_name = ollama_model_name
+
         self.commands: dict[str, TCommand] = dict()
         for command in init_commands:
             self.add_command(command, should_rebuid_system_prompt=False)
         self.rebuild_system_prompt()
 
+        self.current_system_prompt_features: list[TAssistantFeature] = init_system_prompt_features
+
     def add_command(self, command: TCommand, should_rebuid_system_prompt = True):
         self.commands[command.command_name] = command
         if should_rebuid_system_prompt:
             self.rebuild_system_prompt
-
 
     def rebuild_system_prompt(self):
         self.system_prompt = DEFAULT_LLM_SYSTEM_PROMPT
@@ -77,19 +89,47 @@ class TAssistant:
             self.system_prompt += f"## {command.command_title}\n{command.command_body}\n"
 
 
+    def update_features(self):
+        for feature in self.current_system_prompt_features:
+            feature.update()
+
+    def add_system_prompt_feature(self, feature: TAssistantFeature):
+        self.current_system_prompt_features.append(feature)
+
+    def build_context_system_prompt(self) -> str:
+        results = []
+        for feature in self.current_system_prompt_features:
+            row = feature.make_current_context_system_prompt().strip()
+            if row:
+                results.append(row)
+
+        return '\n'.join(results)
+
+
+
     def feed_text(self, input_text: str):
         if input_text == "":
             print("Empty input, ignoring")
             return
+
+        self.update_features()
+
         text = input_text
 
         if len(self.buffered_input) > 0:
             text = self.buffered_input + " " + text
 
+        context_system_prompts: list[str] = []
+        current_feature_system_prompt = self.build_context_system_prompt()
+        if current_feature_system_prompt:
+            context_system_prompts.append(current_feature_system_prompt)
+
+
         chat_response: str = send_ollama_completion(
             self.model_name,
             self.system_prompt,
             self.previous_messages,
+            context_system_prompts,
             text
         )
 
@@ -133,22 +173,7 @@ class TAssistant:
 
 
 
-def get_active_window_program():
-    try:
-        # Get window ID of active window
-        window_id = subprocess.check_output(['xdotool', 'getactivewindow']).decode().strip()
-
-        # Get PID of the window
-        pid = subprocess.check_output(['xdotool', 'getwindowpid', window_id]).decode().strip()
-
-        # Get program name from PID
-        program_name = subprocess.check_output(['ps', '-p', pid, '-o', 'comm=']).decode().strip()
-
-        return program_name
-    except Exception as e:
-        return ""
-
-def send_ollama_completion(model, system_prompt, previous_messages, user_prompt):
+def send_ollama_completion(model, system_prompt, previous_messages, context_system_prompts, user_prompt):
     """
     Send a completion request to a local Ollama server with a system prompt
 
@@ -166,14 +191,12 @@ def send_ollama_completion(model, system_prompt, previous_messages, user_prompt)
     messages.append({"role": "system", "content": system_prompt})
     messages.extend(previous_messages)
 
-    clipboard = get_clipboard_data()
-    if len(clipboard) >= 0 and len(clipboard) <= 10000:
-        messages.append({
-            "role" : "system",
-            "content" : f"Current user clipboard: \n```\n{clipboard}\n```\nCurrent active window: {get_active_window_program()}"
-            })
-    elif len(clipboard) > 10000:
-        print("Clipboard content too long, ignoring")
+    for context_system_promp in context_system_prompts:
+        if context_system_promp:
+             messages.append({
+                 "role" : "system",
+                 "content" : context_system_promp
+                 })
 
     messages.append({
         "role": "user",
@@ -199,11 +222,7 @@ def send_ollama_completion(model, system_prompt, previous_messages, user_prompt)
     except requests.RequestException as e:
         return f"Error sending request: {e}"
 
-def get_clipboard_data() -> str:
-    p = subprocess.Popen(['xclip','-selection', 'clipboard', '-o'], stdout=subprocess.PIPE)
-    retcode = p.wait()
-    data = p.stdout.read()
-    return data.decode('utf-8')
+
 
 def clear_console_row():
     """Clears the current row in the terminal."""

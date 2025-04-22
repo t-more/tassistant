@@ -6,6 +6,8 @@ import emacs
 
 import subprocess
 
+import emacs_ext
+
 class KeyboardInputTCommand(TCommand):
 
 
@@ -20,12 +22,14 @@ If the use asks you to type something on the keyboard you run the KEYBOARD_TYPE_
 [## END ##]
 ```
 IMPORANT: DO NOT invoke this command unless the last user prompt asks you to
-For example if the user asks you to write "Potato" on the keyboard you respond with
+For example if the user asks you to write "Potato" on the keyboard you respond with (do not respond with the markdown region)
 ```
 [## KEYBOARD_TYPE_STRING ##]
 Potato
 [## END ##]
 ```
+
+IMPORANT: If you want to show the user what command you will do before doing it do not include the [## and ##] part. Only use those when you want to execute the command.
         """
 
         self.keyboard_controller = Controller()
@@ -50,20 +54,53 @@ Never use yes-or-no-p for simple actions
 <EMACS COMMAND(s)>
 [## END ##]
 ```
-IMPORANT: Before invoking commands that may change the data in the buffer, ask for permision
-```
+Example:
 [## EMACS ##]
-(buffer-name (current-buffer))
+(replace-first-in-buffer "def old_function_name(" "def new_function_name(")
 [## END ##]
-```
 
 Here is some useful emacs commands:
 
 ###
+####
 To get the contents of the current buffer: do this
 ```
 (substring-no-properties (buffer-string))
 ```
+####
+To go to a certain line (in this example, line 1 (the first line))
+```
+(goto-line 1)
+```
+####
+To split a string (or buffer) at the lines type
+```
+(split-string (buffer-string) "\n")
+```
+####
+To insert data into emacs prefer the use of insert command. It inserts data at the current position
+```
+(insert "example\ntext")
+```
+####
+To replace part of the using a regex pattern, the first argument is a regex and the second is the text to replace it with
+```
+(replace-regexp "5" "fizz")
+(replace-regexp "\\(2\\|8\\|9\\)" "buzz")
+```
+IMPORTANT: When asking you to replace occursence remember to go to the first line before running the command.
+####
+When you should replace an exact region in a buffer use the following command. First argument should be the exact text to replace.
+```
+(replace-first-in-buffer "def old_function_name(" "def new_function_name(")
+```
+IMPORTANT: When asked to delete something use replace-first-in-buffer and provide an empty string as the argument.
+####
+When asked to go to a specific word or phrase in code you can use `search-and-goto-start` to go to the start of the match.
+```
+(search-and-goto-start "<STRING_TO_GO_TO>")
+```
+IMPORTANT: When asked to go to a certain function use this command with a unique part of the string that identifies that area.
 
         """
 
@@ -71,8 +108,5 @@ To get the contents of the current buffer: do this
 
     def run(self, input: str):
         print(f"Evaluating emacs command '{input}'")
-        p = subprocess.Popen(['emacsclient','--eval', f'(with-current-buffer (window-buffer (frame-selected-window (selected-frame))) {input})'], stdout=subprocess.PIPE)
-        retcode = p.wait()
-        data:bytes = p.stdout.read()
-        res = data.decode("utf-8").strip()
+        res = emacs_ext.run_in_current_buffer(f"\n{input}")
         print(f"Result '{res}'")

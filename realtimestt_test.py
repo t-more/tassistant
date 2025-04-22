@@ -1,18 +1,19 @@
 from RealtimeSTT import AudioToTextRecorder
 
 from assistant_context import TAssistant
-from base_commands import EmacsTCommand, KeyboardInputTCommand
-from base_features import ClipboardFeature, ActiveWindowFeature
+import base_commands
+import base_features
 
 assistant = TAssistant(
     ollama_model_name = "gemma3:12b",
     init_commands=[
-        KeyboardInputTCommand(),
-        EmacsTCommand()
+        base_commands.KeyboardInputTCommand(),
+        base_commands.EmacsTCommand()
     ],
     init_system_prompt_features=[
-        ClipboardFeature(),
-        ActiveWindowFeature()
+        base_features.ClipboardFeature,
+        base_features.ActiveWindowFeature,
+        base_features.EmacsDetailsFeature
     ]
 )
 

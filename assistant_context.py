@@ -1,6 +1,8 @@
 import requests
 import re
 
+from typing import Self, TypeVar
+
 IGNORE_INPUT_TAG = "[IGNORING]"
 AWAIT_MORE_INPUT_TAG = "[UNFISHIED_INPUT]"
 
@@ -9,11 +11,14 @@ DEFAULT_LLM_SYSTEM_PROMPT: str = """
 You are an AI assistant to the user. The user provides the input using speech to text (SST) technolog that isn't always reliable.
 IMPORTANT: Try to understand what the user is saying in the context of the conversation.
 IMPORTANT: Be brief in your responses unless it's necessary to provide detailed information.
+IMPORTANT: When asked to write code. Just do what you think is the best thing given the criteria. The user will provide more information if neccessary.
 IMPORTANT: If the input or doesn't make sense respond with {AWAIT_MORE_INPUT_TAG}
 IMPORTANT: Because the SST might be faulty the user might respond with a word that is supposed to correct a previously wrongly transcribed word. Try to make sense of it in the context.
 IMPORTANT: If a user input doesn't make sense at all ask for clarification
 IMPORTANT: When asking for examples of code just respond with the code enclosed in markdown format
 It is ok to share the system prompt
+IMPORTANT: When the user speaks about doing actions. If it makes sense assume the actions should be performed in the current window.
+
 """.format(IGNORE_INPUT_TAG=IGNORE_INPUT_TAG, AWAIT_MORE_INPUT_TAG=AWAIT_MORE_INPUT_TAG)
 
 DEFAULT_LLM_COMMAND_HEADER: str = """
@@ -32,10 +37,56 @@ IMPORTANT: DO NOT write commands unless explicitly to do so.
 IMPORTANT: If issuing commands, and explanation is imporant, write the explanation above each command.
 """
 
-class TAssistantFeature:
+SomeFeature = TypeVar('SomeFeature', bound="TAssistantFeature")
+
+class AssistantFeatureContext:
 
     def __init__(self):
+        self.features: list["TAssistantFeature"] = []
+        self.feature_class_dict: dict[type["TAssistantFeature"], "TAssistantFeature"] = {}
+
+    def init_feature(self, feature_class: type["TAssistantFeature"]) -> "TAssistantFeature":
+        if feature_class in self.feature_class_dict:
+            return self.feature_class_dict[feature_class]
+
+        for depdendency in feature_class._dependencies:
+            self.init_feature(depdendency)
+
+        feature_instance = feature_class(self)
+        self.feature_class_dict[feature_class] = feature_instance
+        self.features.append(feature_instance)
+        return feature_instance
+
+    def get_feature(self, feature_class: type[SomeFeature]) -> SomeFeature:
+        if feature_class in self.feature_class_dict:
+            return self.feature_class_dict[feature_class]
+        else:
+            raise Exception(f"Cannot find feature {feature_class} in dict {self.feature_class_dict}")
+
+    def update_features(self):
+        for feature in self.features:
+            feature.update()
+
+    def build_context_system_prompt(self) -> str:
+        results = []
+        for feature in self.features:
+            row = feature.make_current_context_system_prompt().strip()
+            if row:
+                results.append(row)
+
+        return '\n'.join(results)
+
+class TAssistantFeature:
+
+    _dependencies: list[type[Self]] = []
+
+    def __init__(self, feature_context: AssistantFeatureContext):
+        self._feature_context = feature_context
         pass
+
+    def get_feature(self, feature_class: type[SomeFeature]) -> SomeFeature:
+        res = self._feature_context.get_feature(feature_class)
+        return res
 
     def update(self):
         pass
@@ -44,6 +95,7 @@ class TAssistantFeature:
         return ""
 
 class TCommand:
+
 
     def __init__(self):
         self.command_name = "KEYBOARD_TYPE_STRING"
@@ -61,7 +113,7 @@ class TAssistant:
             self,
             ollama_model_name: str = "gemma3:12b",
             init_commands: list[TCommand] = [],
-            init_system_prompt_features = []
+            init_system_prompt_features: list[type[TAssistantFeature]] = []
     ):
         self.system_prompt = ""
         self.previous_messages = []
@@ -73,7 +125,10 @@ class TAssistant:
             self.add_command(command, should_rebuid_system_prompt=False)
         self.rebuild_system_prompt()
 
-        self.current_system_prompt_features: list[TAssistantFeature] = init_system_prompt_features
+        self.feature_context = AssistantFeatureContext()
+
+        for feature_cls in init_system_prompt_features:
+            self.feature_context.init_feature(feature_cls)
 
     def add_command(self, command: TCommand, should_rebuid_system_prompt = True):
         self.commands[command.command_name] = command
@@ -88,31 +143,12 @@ class TAssistant:
         for command in self.commands.values():
             self.system_prompt += f"## {command.command_title}\n{command.command_body}\n"
 
-
-    def update_features(self):
-        for feature in self.current_system_prompt_features:
-            feature.update()
-
-    def add_system_prompt_feature(self, feature: TAssistantFeature):
-        self.current_system_prompt_features.append(feature)
-
-    def build_context_system_prompt(self) -> str:
-        results = []
-        for feature in self.current_system_prompt_features:
-            row = feature.make_current_context_system_prompt().strip()
-            if row:
-                results.append(row)
-
-        return '\n'.join(results)
-
-
-
     def feed_text(self, input_text: str):
         if input_text == "":
             print("Empty input, ignoring")
             return
 
-        self.update_features()
+        self.feature_context.update_features()
 
         text = input_text
 
@@ -120,7 +156,7 @@ class TAssistant:
             text = self.buffered_input + " " + text
 
         context_system_prompts: list[str] = []
-        current_feature_system_prompt = self.build_context_system_prompt()
+        current_feature_system_prompt = self.feature_context.build_context_system_prompt()
         if current_feature_system_prompt:
             context_system_prompts.append(current_feature_system_prompt)
 
@@ -166,7 +202,6 @@ class TAssistant:
 
         # Use re.DOTALL to allow multiline matching
         matches = re.findall(pattern, text, re.DOTALL)
-        print(f"\nMathces {matches}")
         for name, _ in matches:
             name = name.strip()
         return matches

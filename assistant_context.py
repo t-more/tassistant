@@ -32,9 +32,8 @@ The user might ask you to perform various system actions. When you are supposed 
 ```
 
 Where <COMMAND_NAME> is to be substituted by the command name and <INPUT_TO_COMMAND> the input to the command.
-IMPORTANT: DO NOT make up commands, the only commands available to you are the ones explicitly given
-IMPORTANT: DO NOT write commands unless explicitly to do so.
-IMPORTANT: If issuing commands, and explanation is imporant, write the explanation above each command.
+IMPORTANT: Only use commands that have been specified to you in a system prompt.
+IMPORTANT: Do not write commands unless explicitly to do so.
 """
 
 SomeFeature = TypeVar('SomeFeature', bound="TAssistantFeature")
@@ -95,12 +94,13 @@ class TAssistantFeature:
         return ""
 
 class TCommand:
-
+    command_body_file: None | str = None
 
     def __init__(self):
-        self.command_name = "KEYBOARD_TYPE_STRING"
-        self.command_title = "PROMPT EXPLANATION"
-        self.command_body = "EPLANATION ON HOW TO ISSUE THE COMMAND"
+        self.command_name: str = "KEYBOARD_TYPE_STRING"
+        self.command_title: str = "PROMPT EXPLANATION"
+        self.command_body: str = "EXPLANATION ON HOW TO ISSUE THE COMMAND"
+        self.command_body_file: None | str = None
 
     def run(self, input: str):
         print("Ran default command, something is wrong")
@@ -133,7 +133,7 @@ class TAssistant:
     def add_command(self, command: TCommand, should_rebuid_system_prompt = True):
         self.commands[command.command_name] = command
         if should_rebuid_system_prompt:
-            self.rebuild_system_prompt
+            self.rebuild_system_prompt()
 
     def rebuild_system_prompt(self):
         self.system_prompt = DEFAULT_LLM_SYSTEM_PROMPT
@@ -141,7 +141,14 @@ class TAssistant:
         self.system_prompt += DEFAULT_LLM_COMMAND_HEADER
 
         for command in self.commands.values():
-            self.system_prompt += f"## {command.command_title}\n{command.command_body}\n"
+            command_body = ""
+            if command.command_body_file is not None:
+                with open("prompts/" + command.command_body_file, "r") as file:
+                    command_body = file.read()
+            else:
+                command_body = command.command_body
+            self.system_prompt += f"## {command.command_title}\n{command_body}\n"
+
 
     def feed_text(self, input_text: str):
         if input_text == "":
@@ -159,7 +166,6 @@ class TAssistant:
         current_feature_system_prompt = self.feature_context.build_context_system_prompt()
         if current_feature_system_prompt:
             context_system_prompts.append(current_feature_system_prompt)
-
 
         chat_response: str = send_ollama_completion(
             self.model_name,
@@ -181,7 +187,6 @@ class TAssistant:
         command_data_list = self.parse_commands(chat_response)
 
         if command_data_list:
-            print(f"Command list {command_data_list}")
             for (name, input) in command_data_list:
                 command = self.commands.get(name, None)
                 if command is None:

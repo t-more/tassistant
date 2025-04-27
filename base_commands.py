@@ -45,64 +45,8 @@ class EmacsTCommand(TCommand):
     def __init__(self):
         self.command_name = "EMACS"
         self.command_title = "Interacting with emacs"
-        self.command_body = """
-The user may ask you to check certain things in emacs when asked to do so respond with the EMACS command together with the emacs elisp you want to evaluate.
-Emacs is the users default editor.
-Never use yes-or-no-p for simple actions
-```
-[## EMACS ##]
-<EMACS COMMAND(s)>
-[## END ##]
-```
-Example:
-[## EMACS ##]
-(replace-first-in-buffer "def old_function_name(" "def new_function_name(")
-[## END ##]
-
-Here is some useful emacs commands:
-
-###
-####
-To get the contents of the current buffer: do this
-```
-(substring-no-properties (buffer-string))
-```
-####
-To go to a certain line (in this example, line 1 (the first line))
-```
-(goto-line 1)
-```
-####
-To split a string (or buffer) at the lines type
-```
-(split-string (buffer-string) "\n")
-```
-####
-To insert data into emacs prefer the use of insert command. It inserts data at the current position
-```
-(insert "example\ntext")
-```
-####
-To replace part of the using a regex pattern, the first argument is a regex and the second is the text to replace it with
-```
-(replace-regexp "5" "fizz")
-(replace-regexp "\\(2\\|8\\|9\\)" "buzz")
-```
-IMPORTANT: When asking you to replace occursence remember to go to the first line before running the command.
-####
-When you should replace an exact region in a buffer use the following command. First argument should be the exact text to replace.
-```
-(replace-first-in-buffer "def old_function_name(" "def new_function_name(")
-```
-IMPORTANT: When asked to delete something use replace-first-in-buffer and provide an empty string as the argument.
-####
-When asked to go to a specific word or phrase in code you can use `search-and-goto-start` to go to the start of the match.
-```
-(search-and-goto-start "<STRING_TO_GO_TO>")
-```
-IMPORTANT: When asked to go to a certain function use this command with a unique part of the string that identifies that area.
-
-        """
+        self.command_body = ""
+        self.command_body_file = "emacs_body.txt"
 
         self.emacs = emacs.EmacsClient()
 
